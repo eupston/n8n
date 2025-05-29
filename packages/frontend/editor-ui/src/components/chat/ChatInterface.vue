@@ -1,19 +1,16 @@
 <template>
-  <NCard class="chat-interface" :bordered="true">
-    <template #header>
-      <span class="chat-header-title">AI Assistant</span>
-    </template>
-    <NScrollbar class="chat-messages" ref="chatMessagesContainer">
+  <N8nCard class="chat-interface" :bordered="true" title="AI Assistant">
+    <N8nScrollbar class="chat-messages" ref="chatMessagesContainer">
       <div v-for="(msg, index) in messages" :key="index" :class="['message-row', msg.sender === 'user' ? 'user-row' : 'system-row']">
-        <NCard :class="['message', msg.sender]" :size="'small'" :bordered="false">
+        <N8nCard :class="['message', msg.sender]" :size="'small'" :appearance="msg.sender === 'user' ? 'primary' : 'default'" :bordered="false">
           <!-- Simple text display for now. For complex messages, use v-html or a markdown renderer -->
           <p>{{ msg.text }}</p>
-        </NCard>
+        </N8nCard>
       </div>
-    </NScrollbar>
+    </N8nScrollbar>
     <template #footer>
       <div class="chat-input-area">
-        <NInput
+        <N8nInput
           type="text"
           v-model:value="newMessage"
           @keyup.enter="sendMessage"
@@ -21,18 +18,19 @@
           clearable
           class="chat-input-field"
         />
-        <NButton type="primary" @click="sendMessage" class="chat-send-button" :disabled="newMessage.trim() === ''">
-          Send
-        </NButton>
+        <N8nButton :appearance="'primary'" @click="sendMessage" class="chat-send-button" :disabled="newMessage.trim() === '' || thinking">
+          <template v-if="thinking">Thinking...</template>
+          <template v-else>Send</template>
+        </N8nButton>
       </div>
     </template>
-  </NCard>
+  </N8nCard>
 </template>
 
 <script lang="ts">
 import { defineComponent, ref, nextTick, onMounted } from 'vue';
-// Hypothetical imports from n8n design system. Replace with actual component imports.
-// import { NButton, NInput, NCard, NScrollbar } from '@n8n/design-system'; 
+// YOU MUST REPLACE THESE WITH ACTUAL IMPORTS FROM @n8n/design-system
+// import { N8nButton, N8nInput, N8nCard, N8nScrollbar } from '@n8n/design-system'; 
 import { chatService } from '@/services/ChatService';
 
 // Define an interface for the message structure
@@ -43,11 +41,12 @@ interface Message {
 
 export default defineComponent({
   name: 'ChatInterface',
-  // components: { NButton, NInput, NCard, NScrollbar }, // Register components if imported locally
+  // components: { N8nButton, N8nInput, N8nCard, N8nScrollbar }, // Register if namespaced or globally registered
   setup() {
     const newMessage = ref('');
     const messages = ref<Message[]>([]);
     const chatMessagesContainer = ref<any>(null); // For NScrollbar instance, type might be specific
+    const thinking = ref(false);
 
     const scrollToBottom = () => {
       nextTick(() => {
@@ -67,21 +66,16 @@ export default defineComponent({
     };
 
     const sendMessage = async () => {
-      if (newMessage.value.trim() === '') return;
+      if (newMessage.value.trim() === '' || thinking.value) return;
       const userMessageText = newMessage.value;
       messages.value.push({ text: userMessageText, sender: 'user' });
       newMessage.value = '';
       scrollToBottom();
 
-      // Add a thinking message (optional)
-      const thinkingMessage: Message = { text: 'Thinking...', sender: 'system' };
-      messages.value.push(thinkingMessage);
-      scrollToBottom();
-
+      thinking.value = true;
       const systemResponse = await chatService.processMessage(userMessageText);
-      
-      // Remove thinking message and add actual response
-      messages.value.pop(); // Remove 'Thinking...'
+      thinking.value = false;
+
       messages.value.push(systemResponse);
       scrollToBottom();
     };
@@ -95,6 +89,7 @@ export default defineComponent({
       messages,
       sendMessage,
       chatMessagesContainer,
+      thinking,
     };
   },
 });
