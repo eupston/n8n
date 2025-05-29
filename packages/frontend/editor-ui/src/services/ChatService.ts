@@ -1,7 +1,7 @@
 import { useWorkflowsStore } from '@/stores/workflows.store';
 import { useNodeTypesStore } from '@/stores/nodeTypes.store';
 import type { INodeUi, IWorkflowDataCreate, XYPosition, INodeParameters } from '@/Interface';
-import { NodeHelpers, type IConnection } from 'n8n-workflow';
+import { NodeHelpers, type IConnection, type INodeTypeDescription, NodeConnectionTypes } from 'n8n-workflow';
 import { globalEventBus } from '@/event-bus';
 
 interface ChatMessage {
@@ -15,33 +15,49 @@ let nodeCreationCounter = 0;
 const paramRegex = /(\w+)(?:\s*=\s*(?:"([^"]*)"|(\S+)))/g;
 
 class ChatService {
-  private parseParameters(paramString: string, existingParams: INodeParameters, nodeTypeDescription: any): INodeParameters {
-    const newParams = { ...existingParams };
+  private parseParameters(paramString: string, defaultParams: INodeParameters, nodeProps: INodeTypeDescription['properties']): INodeParameters {
+    const newParams = { ...defaultParams };
     let match;
     while ((match = paramRegex.exec(paramString)) !== null) {
       const key = match[1];
-      const value = match[2] !== undefined ? match[2] : match[3]; // value from quotes or unquoted
+      let value: any = match[2] !== undefined ? match[2] : match[3]; // value from quotes or unquoted
 
-      // Basic type conversion based on nodeTypeDescription (very simplified)
-      // A real implementation would need to inspect nodeTypeDescription.properties[key].type
-      if (nodeTypeDescription && nodeTypeDescription.properties) {
-        const propDef = nodeTypeDescription.properties.find((p: any) => p.name === key);
-        if (propDef) {
-          if (propDef.type === 'number') {
-            (newParams as any)[key] = parseFloat(value);
-          } else if (propDef.type === 'boolean') {
-            (newParams as any)[key] = value.toLowerCase() === 'true';
-          } else {
-            (newParams as any)[key] = value; // Default to string
-          }
-        } else {
-          (newParams as any)[key] = value; // Parameter not in definition, add as is
+      const propDef = nodeProps.find(p => p.name === key);
+
+      if (propDef) {
+        switch (propDef.type) {
+          case 'number':
+            value = parseFloat(value);
+            if (isNaN(value)) continue; // Skip if not a valid number
+            break;
+          case 'boolean':
+            value = value.toLowerCase() === 'true';
+            break;
+          case 'json': // JSON parameters might need JSON.parse, with error handling
+            try {
+              value = JSON.parse(value);
+            } catch (e) {
+              console.warn(`Failed to parse JSON for param ${key}:`, value, e);
+              // Potentially skip or set as raw string depending on desired behavior
+              continue; 
+            }
+            break;
+          // Add more type conversions as needed: options, multiOptions, fixedCollection, etc.
+          default: // string or other types not explicitly handled
+            break;
         }
-      } else {
-        (newParams as any)[key] = value; // No type description, add as is
       }
+      (newParams as any)[key] = value;
     }
     return newParams;
+  }
+
+  private parseHandle(handleString?: string): { name: string, index: number } {
+    if (!handleString) return { name: NodeConnectionTypes.Main, index: 0 }; // Default
+    const parts = handleString.split('_');
+    const name = parts[0] || NodeConnectionTypes.Main;
+    const index = parts.length > 1 ? parseInt(parts[1], 10) : 0;
+    return { name, index: isNaN(index) ? 0 : index };
   }
 
   public async processMessage(message: string): Promise<ChatMessage> {
@@ -55,7 +71,7 @@ class ChatService {
       // Command: create node <type> [as <name>] [with <params>]
       const createNodeMatch = lowerMessage.match(/^create node ([\w.-]+)(?: as (\w+))?(?: with (.+))?$/i);
       // Command: connect <sourceNode>[.output_<outputName>] to <targetNode>[.input_<inputName>]
-      const connectMatch = lowerMessage.match(/^connect (\w+)(?: output (\w+))? to (\w+)(?: input (\w+))?$/i);
+      const connectMatch = lowerMessage.match(/^connect (\w+)(?: output (\S+))? to (\w+)(?: input (\S+))?$/i);
 
       if (createNodeMatch) {
         const nodeTypeFullName = createNodeMatch[1];
@@ -71,11 +87,11 @@ class ChatService {
           const currentNodes = workflowsStore.allNodes;
           const lastNodePosition: XYPosition = currentNodes.length > 0 && currentNodes[currentNodes.length - 1].position 
             ? currentNodes[currentNodes.length - 1].position 
-            : [0, 0];
+            : [0, -100]; // Start a bit higher for first node
 
           let nodeParams: INodeParameters = { ...nodeTypeDescription.defaults };
           if (paramsString) {
-            nodeParams = this.parseParameters(paramsString, nodeParams, nodeTypeDescription);
+            nodeParams = this.parseParameters(paramsString, nodeParams, nodeTypeDescription.properties);
           }
 
           const newNodeData: INodeUi = {
@@ -83,7 +99,7 @@ class ChatService {
             name: newNodeName,
             type: nodeTypeDescription.name,
             typeVersion: nodeTypeDescription.version,
-            position: [lastNodePosition[0] + 250, lastNodePosition[1]], // Increased offset slightly
+            position: [lastNodePosition[0] + 250, lastNodePosition[1]],
             parameters: nodeParams,
             credentials: {},
             notes: '',
@@ -98,9 +114,9 @@ class ChatService {
         }
       } else if (connectMatch) {
         const sourceNodeName = connectMatch[1];
-        const sourceOutputName = connectMatch[2] || 'main'; // Default to 'main' output
+        const sourceHandleStr = connectMatch[2]; 
         const targetNodeName = connectMatch[3];
-        const targetInputName = connectMatch[4] || 'main'; // Default to 'main' input
+        const targetHandleStr = connectMatch[4];
 
         const sourceNode = workflowsStore.getNodeByName(sourceNodeName);
         const targetNode = workflowsStore.getNodeByName(targetNodeName);
@@ -108,15 +124,15 @@ class ChatService {
         if (!sourceNode || !targetNode) {
           responseText = "Error: One or both nodes for connection not found.";
         } else {
-          // Simplified connection logic: assumes first output/input index (0)
-          // Real logic needs to parse handle names (e.g., main_0, main_1) if specified, 
-          // or look up node descriptions for valid handles.
+          const sourceHandle = this.parseHandle(sourceHandleStr);
+          const targetHandle = this.parseHandle(targetHandleStr);
+
           const connection: IConnection[] = [
-            { node: sourceNode.name, type: sourceOutputName, index: 0 },
-            { node: targetNode.name, type: targetInputName, index: 0 },
+            { node: sourceNode.name, type: sourceHandle.name, index: sourceHandle.index },
+            { node: targetNode.name, type: targetHandle.name, index: targetHandle.index },
           ];
           workflowsStore.addConnection({ connection });
-          responseText = `Connected ${sourceNodeName} (${sourceOutputName}) to ${targetNodeName} (${targetInputName}).`;
+          responseText = `Connected ${sourceNodeName} (output ${sourceHandle.name}_${sourceHandle.index}) to ${targetNodeName} (input ${targetHandle.name}_${targetHandle.index}).`;
         }
 
       } else if (lowerMessage.startsWith('create workflow')) {
@@ -134,7 +150,10 @@ class ChatService {
         responseText = `Workflow "${newWorkflow.name}" created. Navigating...`;
         globalEventBus.emit('navigate-to-workflow', newWorkflow.id);
       } else {
-        responseText = `Command not recognized. Try: "create node <type> [as <name>] [with key=value, key2=\"value two\"]", "connect <node1> [output <handle>] to <node2> [input <handle>]", or "create workflow <name>".`;
+        responseText = `Command not recognized. Examples:\n` +
+                       `  create node n8n-nodes-base.set as myNode with text="Hello", number=123\n` +
+                       `  connect myNode output main_0 to anotherNode input main_0\n` +
+                       `  create workflow My Workflow Name`;
       }
     } catch (error) {
       console.error("Error processing chat command:", error);
