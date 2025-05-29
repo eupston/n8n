@@ -19,6 +19,7 @@ import { useUsersStore } from '@/stores/users.store';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useHistoryHelper } from '@/composables/useHistoryHelper';
 import { useStyles } from './composables/useStyles';
+import ChatInterface from '@/components/chat/ChatInterface.vue';
 
 const route = useRoute();
 const rootStore = useRootStore();
@@ -124,6 +125,7 @@ watch(defaultLocale, (newLocale) => {
 			<AskAssistantFloatingButton v-if="showAssistantButton" />
 		</div>
 		<AssistantsHub />
+		<ChatInterface />
 	</div>
 </template>
 
