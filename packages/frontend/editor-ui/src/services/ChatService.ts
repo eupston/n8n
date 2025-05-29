@@ -1,6 +1,6 @@
 import { useWorkflowsStore } from '@/stores/workflows.store';
 import { useNodeTypesStore } from '@/stores/nodeTypes.store';
-import type { INodeUi, IWorkflowDataCreate } from '@/Interface';
+import type { INodeUi, IWorkflowDataCreate, XYPosition } from '@/Interface';
 import { NodeHelpers } from 'n8n-workflow'; // This import is likely causing linter issues if types aren't resolved
 
 interface ChatMessage {
@@ -36,10 +36,12 @@ class ChatService {
 
           // Get current nodes to calculate next position (very basic)
           const currentNodes = workflowsStore.allNodes;
-          const lastNodePosition = currentNodes.length > 0 ? currentNodes[currentNodes.length - 1].position : [0, 0];
+          const lastNodePosition: XYPosition = currentNodes.length > 0 && currentNodes[currentNodes.length - 1].position 
+            ? currentNodes[currentNodes.length - 1].position 
+            : [0, 0];
 
-          // Bypassing linter issues with 'any'. Proper typing depends on INodeUi and n8n-workflow resolution.
-          const newNodeData: any = {
+          // Constructing with the assumption that INodeUi correctly inherits id, type, typeVersion from INode
+          const newNodeData: INodeUi = {
             id: NodeHelpers.generateId(), 
             name: newNodeName,
             type: nodeTypeDescription.name,
@@ -49,11 +51,13 @@ class ChatService {
             credentials: {},
             notes: '',
             disabled: false,
-            // Ensure all other INodeUi fields are populated as necessary by workflowsStore.addNode
-            // retryOnFail, executeOnce, alwaysOutputData etc.
+            retryOnFail: false,
+            executeOnce: false,
+            alwaysOutputData: false,
+            // Ensure any other mandatory fields from INode/INodeUi are present
           };
 
-          workflowsStore.addNode(newNodeData as INodeUi); 
+          workflowsStore.addNode(newNodeData); 
           responseText = `Node "${nodeTypeDescription.displayName}" (named "${newNodeName}") created in the current workflow.`;
           // success = true;
         }
@@ -71,12 +75,27 @@ class ChatService {
           settings: newWorkflowInitialData.settings,
           active: false,
           tags: [],
-          // Ensure all required fields for IWorkflowDataCreate are present
+          // parentFolderId: undefined, // Or some logic to determine this
         };
 
         const newWorkflow = await workflowsStore.createNewWorkflow(workflowCreateData);
-        responseText = `Workflow "${newWorkflow.name}" created with ID: ${newWorkflow.id}. You may need to open it manually.`;
-        // success = true;
+        responseText = `Workflow "${newWorkflow.name}" created with ID: ${newWorkflow.id}.`; 
+
+        // 3. Add proper navigation after workflow creation
+        // We need access to the Vue router instance here. 
+        // This service is not a Vue component, so direct router access is tricky.
+        // Option 1: Pass router instance to ChatService (complex setup).
+        // Option 2: Emit an event that a Vue component (e.g., App.vue or ChatInterface.vue) listens to, then navigates.
+        // Option 3: Workflows store itself handles navigation or provides a helper.
+
+        // For now, let's assume an event bus or a direct navigation call if router is made available.
+        // This is a placeholder for navigation logic:
+        // import router from '@/router'; // This might not work directly here.
+        // router.push({ name: 'workflowEdit', params: { id: newWorkflow.id } });
+        // For now, we'll modify the response text and rely on a later step to implement actual navigation.
+        responseText += " Navigating to the new workflow...";
+        // Actual navigation needs to be implemented in a Vue-aware context.
+
       }
     } catch (error) {
       console.error("Error processing chat command:", error);
