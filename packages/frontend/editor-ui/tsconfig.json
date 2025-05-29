@@ -4,6 +4,7 @@
 		"baseUrl": ".",
 		"rootDirs": [".", "../@n8n/composables/src", "../@n8n/chat/src", "../@n8n/design-system/src"],
 		"outDir": "dist",
+		"lib": ["es2017", "dom"],
 		"types": [
 			"vitest/globals",
 			"unplugin-icons/types/vue",

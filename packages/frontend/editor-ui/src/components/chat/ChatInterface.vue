@@ -1,7 +1,9 @@
 <template>
   <div class="chat-interface">
-    <div class="chat-messages">
-      <!-- Messages will go here -->
+    <div class="chat-messages" ref="chatMessagesContainer">
+      <div v-for="(msg, index) in messages" :key="index" :class="['message', msg.sender]">
+        <p>{{ msg.text }}</p>
+      </div>
     </div>
     <div class="chat-input">
       <input type="text" v-model="newMessage" @keyup.enter="sendMessage" placeholder="Type your message..." />
@@ -11,22 +13,41 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref } from 'vue';
+import { defineComponent, ref, nextTick } from 'vue';
+import { chatService } from '@/services/ChatService'; // Import the service
+
+// Define an interface for the message structure
+interface Message {
+  text: string;
+  sender: 'user' | 'system';
+}
 
 export default defineComponent({
   name: 'ChatInterface',
   setup() {
     const newMessage = ref('');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const messages = ref<any[]>([]); // Placeholder for messages
+    const messages = ref<Message[]>([]); // Use the Message interface
+    const chatMessagesContainer = ref<HTMLElement | null>(null); // For autoscrolling
 
-    const sendMessage = () => {
+    const scrollToBottom = () => {
+      nextTick(() => {
+        if (chatMessagesContainer.value) {
+          chatMessagesContainer.value.scrollTop = chatMessagesContainer.value.scrollHeight;
+        }
+      });
+    };
+
+    const sendMessage = async () => {
       if (newMessage.value.trim() === '') return;
 
-      // For now, just log the message and clear the input
-      // Later, this will interact with a backend service
-      console.log('Sending message:', newMessage.value);
-      messages.value.push({ text: newMessage.value, sender: 'user' });
+      const userMessage: Message = { text: newMessage.value, sender: 'user' };
+      messages.value.push(userMessage);
+      scrollToBottom();
+
+      const systemResponse = await chatService.processMessage(newMessage.value);
+      messages.value.push(systemResponse);
+      scrollToBottom();
+
       newMessage.value = '';
     };
 
@@ -34,6 +55,7 @@ export default defineComponent({
       newMessage,
       messages,
       sendMessage,
+      chatMessagesContainer, // Expose for template ref
     };
   },
 });
@@ -59,6 +81,30 @@ export default defineComponent({
   overflow-y: auto;
   padding: 10px;
   border-bottom: 1px solid #ccc;
+  display: flex;
+  flex-direction: column;
+}
+
+.message {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: 15px;
+  max-width: 70%;
+  word-wrap: break-word;
+}
+
+.message.user {
+  background-color: #007bff;
+  color: white;
+  align-self: flex-end;
+  border-bottom-right-radius: 5px;
+}
+
+.message.system {
+  background-color: #f0f0f0;
+  color: #333;
+  align-self: flex-start;
+  border-bottom-left-radius: 5px;
 }
 
 .chat-input {
