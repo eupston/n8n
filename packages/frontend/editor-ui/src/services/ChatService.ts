@@ -2,6 +2,7 @@ import { useWorkflowsStore } from '@/stores/workflows.store';
 import { useNodeTypesStore } from '@/stores/nodeTypes.store';
 import type { INodeUi, IWorkflowDataCreate, XYPosition } from '@/Interface';
 import { NodeHelpers } from 'n8n-workflow'; // This import is likely causing linter issues if types aren't resolved
+import { globalEventBus } from '@/event-bus'; // Import the event bus
 
 interface ChatMessage {
   text: string;
@@ -79,7 +80,8 @@ class ChatService {
         };
 
         const newWorkflow = await workflowsStore.createNewWorkflow(workflowCreateData);
-        responseText = `Workflow "${newWorkflow.name}" created with ID: ${newWorkflow.id}.`; 
+        responseText = `Workflow "${newWorkflow.name}" created. Navigating...`; 
+        globalEventBus.emit('navigate-to-workflow', newWorkflow.id); // Emit event
 
         // 3. Add proper navigation after workflow creation
         // We need access to the Vue router instance here. 
