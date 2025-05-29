@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import '@/polyfills';
 
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import { useRoute } from 'vue-router';
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, onUnmounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import LoadingView from '@/views/LoadingView.vue';
 import BannerStack from '@/components/banners/BannerStack.vue';
 import Modals from '@/components/Modals.vue';
@@ -19,8 +19,11 @@ import { useUsersStore } from '@/stores/users.store';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useHistoryHelper } from '@/composables/useHistoryHelper';
 import { useStyles } from './composables/useStyles';
+import ChatInterface from '@/components/chat/ChatInterface.vue';
+import { globalEventBus } from '@/event-bus';
 
 const route = useRoute();
+const router = useRouter();
 const rootStore = useRootStore();
 const assistantStore = useAssistantStore();
 const builderStore = useBuilderStore();
@@ -43,16 +46,22 @@ const appGrid = ref<Element | null>(null);
 const assistantSidebarWidth = computed(() => assistantStore.chatWidth);
 const builderSidebarWidth = computed(() => builderStore.chatWidth);
 
+const handleNavigateToWorkflow = (workflowId: string) => {
+	router.push({ name: VIEWS.WORKFLOW, params: { name: workflowId } });
+};
+
 onMounted(async () => {
 	setAppZIndexes();
 	logHiringBanner();
 	loading.value = false;
 	window.addEventListener('resize', updateGridWidth);
 	await updateGridWidth();
+	globalEventBus.on('navigate-to-workflow', handleNavigateToWorkflow);
 });
 
 onBeforeUnmount(() => {
 	window.removeEventListener('resize', updateGridWidth);
+	globalEventBus.off('navigate-to-workflow', handleNavigateToWorkflow);
 });
 
 const logHiringBanner = () => {
@@ -124,6 +133,7 @@ watch(defaultLocale, (newLocale) => {
 			<AskAssistantFloatingButton v-if="showAssistantButton" />
 		</div>
 		<AssistantsHub />
+		<ChatInterface />
 	</div>
 </template>
 
